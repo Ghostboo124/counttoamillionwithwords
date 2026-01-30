@@ -1,4 +1,7 @@
 # counttoamillionwithwords
+
+## This project's function is merged with https://github.com/0x62b/countingbot
+
 This is a Slack bot that moderates a channel, where you count to a million with words (eg. "six thousand seven hundred and forty one")
 
 reacts with :white-tick: when number correct\
