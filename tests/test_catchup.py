@@ -46,6 +46,11 @@ class CatchupTests(unittest.TestCase):
 
     import main
     self.main = importlib.reload(main)
+    self.posted_messages = []
+    self.main.slack_app.client.chat_postMessage = lambda channel, text: self.posted_messages.append({
+      "channel": channel,
+      "text": text
+    })
 
   def tearDown(self):
     self.temp_dir.cleanup()
@@ -133,6 +138,30 @@ class CatchupTests(unittest.TestCase):
     self.main.run_catchup_if_needed(client)
     self.assertEqual(client.history_calls, 1)
     self.assertEqual(self.main.load_state()["current"], 1)
+
+  def test_override_command_updates_state(self):
+    response = self.main.handle_override_command({
+      "user_id": "U092839T3A7",
+      "channel_id": "C123",
+      "text": "42"
+    })
+
+    self.assertEqual(response["text"], "success")
+    self.assertEqual(self.main.load_state()["current"], 42)
+    self.assertEqual(len(self.posted_messages), 1)
+
+  def test_leaderboard_command_orders_scores(self):
+    self.main.save_state({
+      "current": 0,
+      "last_user": "",
+      "scores": {"U1": 1, "U2": 5, "U3": 3},
+      "last_processed_ts": None
+    })
+
+    response = self.main.handle_leaderboard_command()
+    self.assertIn("1. <@U2>: 5", response["text"])
+    self.assertIn("2. <@U3>: 3", response["text"])
+    self.assertIn("3. <@U1>: 1", response["text"])
 
 
 if __name__ == "__main__":

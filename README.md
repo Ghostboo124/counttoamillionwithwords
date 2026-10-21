@@ -10,15 +10,20 @@ reacts with :ok_hand: when number ends with 69\
 reacts with :chess-brilliant: when number is prime\
 reacts with :tada: when number modulo 100 is 0
 
-There are two routes for commands:
-* one to override the number
-* one to view the leaderboard
+It also supports:
+* `/override` command to set the count
+* `/leaderboard` command to view top counters
 
 ## Required environment variables
 
 * `SLACK_BOT_TOKEN`
+* `SLACK_APP_TOKEN` (Socket Mode app-level token, usually `xapp-...`)
 * `SLACK_SIGNING_SECRET`
 * `COUNTING_CHANNEL`
+
+## Runtime mode
+
+The bot now runs in **Slack Socket Mode** (websocket connection to Slack) instead of exposing Slack HTTP event endpoints.
 
 ## Catch-up after downtime
 
@@ -42,6 +47,8 @@ If no checkpoint exists yet:
 ### Slack permissions needed
 
 Catch-up requires history read scope for the counting channel (`conversations.history` compatible scope for your channel type) in addition to the bot’s existing message/reaction permissions.
+
+Socket Mode also requires enabling Socket Mode in your Slack app and granting an app-level token with `connections:write`.
 
 ## Docker / persistent state
 

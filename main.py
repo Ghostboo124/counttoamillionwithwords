@@ -5,9 +5,8 @@ from decimal import Decimal, InvalidOperation
 from tempfile import NamedTemporaryFile
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
 from slack_bolt import App
-from slack_bolt.adapter.flask import SlackRequestHandler
+from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from parser import parse
 
@@ -23,6 +22,7 @@ slack_app = App(
 )
 
 CHANNEL = os.getenv("COUNTING_CHANNEL")
+APP_TOKEN = os.getenv("SLACK_APP_TOKEN")
 STATE_DIR = os.getenv("STATE_DIR", ".")
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
 NUMBER_FILE = os.path.join(STATE_DIR, "number.txt")
@@ -273,32 +273,21 @@ def new_message(event, say, client):
   run_catchup_if_needed(client)
   process_message_event(event, client)
 
-app = Flask(__name__)
-handler = SlackRequestHandler(slack_app)
-
-@app.route("/slack/events", methods=["POST"])
-def slack_events():
-  return handler.handle(request)
-
-@app.route("/commands/override", methods=["POST"])
-def override():
-  data = request.form
+def handle_override_command(data):
   text = data.get("text", "")
   split = text.split()
 
   if data.get("user_id") != "U092839T3A7":
-    res = {
-      "response_type": "ephermeral",
+    return {
+      "response_type": "ephemeral",
       "text": "you don't have permissions to do this"
     }
-    return jsonify(res)
   
   if len(split) != 1 or not split[0].isdigit():
-    res = {
+    return {
       "response_type": "ephemeral",
       "text": "need one argument - number to set"
     }
-    return jsonify(res)
 
   state = load_state()
   state["current"] = int(split[0])
@@ -309,14 +298,12 @@ def override():
     text=f"counting number updated to {split[0]}"
   )
 
-  res = {
+  return {
     "response_type": "ephemeral",
     "text": f"success"
   }
-  return jsonify(res)
 
-@app.route("/commands/leaderboard", methods=["POST"])
-def leaderboard():
+def handle_leaderboard_command():
   scores = load_state()["scores"]
   
   best = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:5]
@@ -325,10 +312,20 @@ def leaderboard():
   for i, (user, score) in enumerate(best):
     text += f"{i + 1}. <@{user}>: {score}\n"
 
-  return jsonify({
+  return {
     "response_type": "ephemeral",
     "text": text
-  })
+  }
+
+@slack_app.command("/override")
+def override(ack, command, respond):
+  ack()
+  respond(handle_override_command(command))
+
+@slack_app.command("/leaderboard")
+def leaderboard(ack, respond):
+  ack()
+  respond(handle_leaderboard_command())
 
 if __name__ == "__main__":
-  app.run(host="0.0.0.0", port=5000)
+  SocketModeHandler(slack_app, APP_TOKEN).start()

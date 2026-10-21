@@ -10,6 +10,4 @@ COPY . .
 ENV STATE_DIR=/app/data
 RUN mkdir -p /app/data
 
-EXPOSE 5000
-
 CMD ["sh", "start.sh"]
