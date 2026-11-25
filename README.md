@@ -21,6 +21,8 @@ It also supports:
 * `SLACK_SIGNING_SECRET`
 * `COUNTING_CHANNEL`
 
+Copy `.env.example` to `.env` and replace the placeholder values with your Slack app credentials and counting channel ID. The example also lists optional catch-up settings and their defaults.
+
 ## Runtime mode
 
 The bot now runs in **Slack Socket Mode** (websocket connection to Slack) instead of exposing Slack HTTP event endpoints.
@@ -55,7 +57,9 @@ Socket Mode also requires enabling Socket Mode in your Slack app and granting an
 Use Docker Compose to keep state durable across restarts:
 
 ```bash
+cp .env.example .env
+# Edit .env with your Slack app credentials and counting channel ID.
 docker compose up --build
 ```
 
-`docker-compose.yml` mounts `./data` to `/app/data` and sets `STATE_DIR=/app/data`, so checkpoints and counters survive container restarts.
+`docker-compose.yml` mounts the named `bot-data` Docker volume at `/app/data` and sets `STATE_DIR=/app/data`, so checkpoints and counters survive container restarts.
