@@ -1,0 +1,39 @@
+_metadata:
+  major_version: 1
+  minor_version: 1
+
+display_information:
+  name: Count to a Million with Words
+  description: Moderates the count in a Slack channel.
+  background_color: "#2EB67D"
+
+features:
+  bot_user:
+    display_name: cdraccula
+    always_online: false
+  slash_commands:
+    - command: /cdraccula-override
+      description: Set the current count
+      usage_hint: "NUMBER"
+      should_escape: false
+    - command: /cdraccula-leaderboard
+      description: Show the top counters
+      should_escape: false
+
+oauth_config:
+  scopes:
+    bot:
+      - commands
+      - chat:write
+      - reactions:write
+      - channels:history
+      - groups:history
+
+settings:
+  event_subscriptions:
+    bot_events:
+      - message.channels
+      - message.groups
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false
