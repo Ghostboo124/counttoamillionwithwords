@@ -369,12 +369,12 @@ def handle_leaderboard_command():
     "text": text
   }
 
-@slack_app.command("/override")
+@slack_app.command("/cdraccula-override")
 def override(ack, command, respond):
   ack()
   respond(handle_override_command(command))
 
-@slack_app.command("/leaderboard")
+@slack_app.command("/cdraccula-leaderboard")
 def leaderboard(ack, respond):
   ack()
   respond(handle_leaderboard_command())

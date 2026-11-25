@@ -11,8 +11,8 @@ reacts with :chess-brilliant: when number is prime\
 reacts with :tada: when number modulo 100 is 0
 
 It also supports:
-* `/override` command to set the count
-* `/leaderboard` command to view top counters
+* `/cdraccula-override` command to set the count
+* `/cdraccula-leaderboard` command to view top counters
 
 ## Required environment variables
 
