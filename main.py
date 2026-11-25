@@ -1,6 +1,8 @@
 import json
 import os
 import threading
+from collections import deque
+from contextlib import contextmanager
 from decimal import Decimal, InvalidOperation
 from tempfile import NamedTemporaryFile
 
@@ -34,6 +36,8 @@ CATCHUP_INITIAL_TIMESTAMP = os.getenv("SLACK_CATCHUP_INITIAL_TIMESTAMP")
 
 _catchup_done = False
 _catchup_lock = threading.Lock()
+_state_lock = threading.Lock()
+LOCK_FILE = os.path.join(STATE_DIR, ".state.lock")
 
 def prime(n):
   ret = True
@@ -48,6 +52,25 @@ def prime(n):
 
 def _ensure_state_dir():
   os.makedirs(STATE_DIR, exist_ok=True)
+
+@contextmanager
+def _locked_state():
+  with _state_lock:
+    _ensure_state_dir()
+    with open(LOCK_FILE, "a+") as lock_file:
+      try:
+        import fcntl
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+      except (ImportError, OSError):
+        pass
+      try:
+        yield
+      finally:
+        try:
+          import fcntl
+          fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        except (ImportError, OSError):
+          pass
 
 def _atomic_write(path, content):
   _ensure_state_dir()
@@ -147,14 +170,13 @@ def _is_message_event_eligible(event):
     return False
   return True
 
-def process_message_event(event, client):
+def _process_message_event_with_state(state, event, client):
   if not _is_message_event_eligible(event):
-    return
+    return False
 
-  state = load_state()
   event_ts = event.get("ts")
   if not _is_newer_ts(event_ts, state.get("last_processed_ts")):
-    return
+    return False
 
   text = event.get("text")
   text = text.replace("-", "")
@@ -214,7 +236,67 @@ def process_message_event(event, client):
     )
 
   state["last_processed_ts"] = event_ts
-  save_state(state)
+  return True
+
+def process_message_event(event, client):
+  with _locked_state():
+    state = load_state()
+    if _process_message_event_with_state(state, event, client):
+      save_state(state)
+
+def _fetch_replay_batch(client, oldest, latest=None):
+  if not oldest:
+    return []
+  max_messages = max(0, CATCHUP_MAX_MESSAGES)
+  if max_messages == 0:
+    return []
+
+  cursor = None
+  retained = deque(maxlen=max_messages)
+  while True:
+    params = {
+      "channel": CHANNEL,
+      "oldest": oldest,
+      "inclusive": False,
+      "limit": min(200, max_messages),
+      "cursor": cursor
+    }
+    if latest is not None:
+      params["latest"] = latest
+    response = client.conversations_history(
+      **params
+    )
+    messages = response.get("messages", [])
+    if not messages:
+      break
+    for message in messages:
+      retained.append(message)
+    cursor = response.get("response_metadata", {}).get("next_cursor")
+    if not response.get("has_more") or not cursor:
+      break
+
+  ordered = sorted(retained, key=lambda m: _ts_to_decimal(m.get("ts")) or Decimal("-1"))
+  return ordered
+
+def replay_messages(client, latest=None):
+  with _locked_state():
+    state = load_state()
+    oldest = state.get("last_processed_ts")
+    if not oldest and CATCHUP_INITIAL_TIMESTAMP:
+      oldest = CATCHUP_INITIAL_TIMESTAMP
+    if not oldest:
+      return
+
+    for message in _fetch_replay_batch(client, oldest=oldest, latest=latest):
+      if _process_message_event_with_state(state, {
+        "channel": CHANNEL,
+        "text": message.get("text", ""),
+        "user": message.get("user"),
+        "bot_id": message.get("bot_id"),
+        "subtype": message.get("subtype"),
+        "ts": message.get("ts")
+      }, client):
+        save_state(state)
 
 def run_catchup_if_needed(client):
   global _catchup_done
@@ -226,52 +308,21 @@ def run_catchup_if_needed(client):
       _catchup_done = True
       return
 
-    state = load_state()
-    oldest = state.get("last_processed_ts")
-    if not oldest and CATCHUP_INITIAL_TIMESTAMP:
-      oldest = CATCHUP_INITIAL_TIMESTAMP
-    if not oldest:
-      _catchup_done = True
-      return
-
-    replayed = 0
-    cursor = None
-    fetched = []
-    while replayed < CATCHUP_MAX_MESSAGES:
-      limit = min(200, CATCHUP_MAX_MESSAGES - replayed)
-      response = client.conversations_history(
-        channel=CHANNEL,
-        oldest=oldest,
-        inclusive=False,
-        limit=limit,
-        cursor=cursor
-      )
-      messages = response.get("messages", [])
-      if not messages:
-        break
-      fetched.extend(messages)
-      replayed += len(messages)
-      cursor = response.get("response_metadata", {}).get("next_cursor")
-      if not response.get("has_more") or not cursor:
-        break
-
-    fetched.sort(key=lambda m: _ts_to_decimal(m.get("ts")) or Decimal("-1"))
-    for message in fetched:
-      process_message_event({
-        "channel": CHANNEL,
-        "text": message.get("text", ""),
-        "user": message.get("user"),
-        "bot_id": message.get("bot_id"),
-        "subtype": message.get("subtype"),
-        "ts": message.get("ts")
-      }, client)
+    replay_messages(client)
 
     _catchup_done = True
 
 @slack_app.event("message")
 def new_message(event, say, client):
   run_catchup_if_needed(client)
-  process_message_event(event, client)
+  event_ts = event.get("ts")
+  with _locked_state():
+    state = load_state()
+    has_replay_boundary = bool(state.get("last_processed_ts") or CATCHUP_INITIAL_TIMESTAMP)
+  if CATCHUP_ENABLED and has_replay_boundary:
+    replay_messages(client, latest=event_ts)
+  else:
+    process_message_event(event, client)
 
 def handle_override_command(data):
   text = data.get("text", "")
@@ -289,9 +340,10 @@ def handle_override_command(data):
       "text": "need one argument - number to set"
     }
 
-  state = load_state()
-  state["current"] = int(split[0])
-  save_state(state)
+  with _locked_state():
+    state = load_state()
+    state["current"] = int(split[0])
+    save_state(state)
 
   slack_app.client.chat_postMessage(
     channel=data.get("channel_id"),

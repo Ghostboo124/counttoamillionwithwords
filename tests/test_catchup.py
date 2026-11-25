@@ -25,7 +25,7 @@ class FakeClient:
       "text": text
     })
 
-  def conversations_history(self, channel, oldest, inclusive, limit, cursor=None):
+  def conversations_history(self, channel, oldest, inclusive, limit, cursor=None, latest=None):
     self.history_calls += 1
     if not self.history_pages:
       return {"messages": [], "has_more": False}
@@ -138,6 +138,69 @@ class CatchupTests(unittest.TestCase):
     self.main.run_catchup_if_needed(client)
     self.assertEqual(client.history_calls, 1)
     self.assertEqual(self.main.load_state()["current"], 1)
+
+  def test_catchup_uses_oldest_messages_when_over_cap(self):
+    os.environ["SLACK_CATCHUP_MAX_MESSAGES"] = "2"
+    import main
+    self.main = importlib.reload(main)
+
+    self.main.save_state({
+      "current": 0,
+      "last_user": "",
+      "scores": {},
+      "last_processed_ts": "1000.0"
+    })
+
+    client = FakeClient(history_pages=[
+      {
+        "messages": [
+          {"ts": "1003.0", "text": "three", "user": "U3"},
+          {"ts": "1002.0", "text": "two", "user": "U2"}
+        ],
+        "has_more": True,
+        "response_metadata": {"next_cursor": "older"}
+      },
+      {
+        "messages": [{"ts": "1001.0", "text": "one", "user": "U1"}],
+        "has_more": False
+      }
+    ])
+
+    self.main.run_catchup_if_needed(client)
+    state = self.main.load_state()
+    self.assertEqual(state["current"], 2)
+    self.assertEqual(state["last_processed_ts"], "1002.0")
+
+  def test_out_of_order_event_recovers_with_history(self):
+    self.main.save_state({
+      "current": 0,
+      "last_user": "",
+      "scores": {},
+      "last_processed_ts": "1000.0"
+    })
+
+    self.main._catchup_done = True
+    client = FakeClient(history_pages=[
+      {
+        "messages": [
+          {"ts": "1002.0", "text": "two", "user": "U2"},
+          {"ts": "1001.0", "text": "one", "user": "U1"}
+        ],
+        "has_more": False
+      }
+    ])
+
+    self.main.new_message({
+      "channel": "C123",
+      "text": "two",
+      "user": "U2",
+      "ts": "1002.0"
+    }, None, client)
+    state = self.main.load_state()
+    self.assertEqual(state["current"], 2)
+    self.assertEqual(state["last_user"], "U2")
+    self.assertEqual(state["scores"]["U1"], 1)
+    self.assertEqual(state["scores"]["U2"], 1)
 
   def test_override_command_updates_state(self):
     response = self.main.handle_override_command({
