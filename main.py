@@ -25,6 +25,11 @@ slack_app = App(
 
 CHANNEL = os.getenv("COUNTING_CHANNEL")
 APP_TOKEN = os.getenv("SLACK_APP_TOKEN")
+ADMIN_USER_IDS = {
+  user_id.strip()
+  for user_id in os.getenv("SLACK_ADMIN_USER_IDS", "").split(",")
+  if user_id.strip()
+}
 STATE_DIR = os.getenv("STATE_DIR", ".")
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
 NUMBER_FILE = os.path.join(STATE_DIR, "number.txt")
@@ -328,7 +333,7 @@ def handle_override_command(data):
   text = data.get("text", "")
   split = text.split()
 
-  if data.get("user_id") != "U092839T3A7":
+  if data.get("user_id") not in ADMIN_USER_IDS:
     return {
       "response_type": "ephemeral",
       "text": "you don't have permissions to do this"

@@ -23,6 +23,8 @@ It also supports:
 
 Copy `.env.example` to `.env` and replace the placeholder values with your Slack app credentials and counting channel ID. The example also lists optional catch-up settings and their defaults.
 
+Set `SLACK_ADMIN_USER_IDS` to a comma-separated list of Slack user IDs allowed to use `/cdraccula-override`. If it is blank or unset, no one can use the override command.
+
 ## Runtime mode
 
 The bot now runs in **Slack Socket Mode** (websocket connection to Slack) instead of exposing Slack HTTP event endpoints.

@@ -38,6 +38,7 @@ class CatchupTests(unittest.TestCase):
     os.environ["SLACK_BOT_TOKEN"] = "xoxb-test"
     os.environ["SLACK_SIGNING_SECRET"] = "test"
     os.environ["COUNTING_CHANNEL"] = "C123"
+    os.environ["SLACK_ADMIN_USER_IDS"] = "U_ADMIN, U_SECOND_ADMIN"
     os.environ["SLACK_TOKEN_VERIFICATION_ENABLED"] = "false"
     os.environ["STATE_DIR"] = self.temp_dir.name
     os.environ["SLACK_CATCHUP_ENABLED"] = "true"
@@ -204,7 +205,7 @@ class CatchupTests(unittest.TestCase):
 
   def test_override_command_updates_state(self):
     response = self.main.handle_override_command({
-      "user_id": "U092839T3A7",
+      "user_id": "U_ADMIN",
       "channel_id": "C123",
       "text": "42"
     })
@@ -212,6 +213,27 @@ class CatchupTests(unittest.TestCase):
     self.assertEqual(response["text"], "success")
     self.assertEqual(self.main.load_state()["current"], 42)
     self.assertEqual(len(self.posted_messages), 1)
+
+  def test_override_command_allows_each_configured_admin(self):
+    response = self.main.handle_override_command({
+      "user_id": "U_SECOND_ADMIN",
+      "channel_id": "C123",
+      "text": "7"
+    })
+
+    self.assertEqual(response["text"], "success")
+    self.assertEqual(self.main.load_state()["current"], 7)
+
+  def test_override_command_rejects_non_admin(self):
+    response = self.main.handle_override_command({
+      "user_id": "U_NOT_ADMIN",
+      "channel_id": "C123",
+      "text": "42"
+    })
+
+    self.assertEqual(response["text"], "you don't have permissions to do this")
+    self.assertEqual(self.main.load_state()["current"], 0)
+    self.assertEqual(len(self.posted_messages), 0)
 
   def test_leaderboard_command_orders_scores(self):
     self.main.save_state({
