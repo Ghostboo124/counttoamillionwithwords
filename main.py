@@ -249,7 +249,7 @@ def process_message_event(event, client):
     if _process_message_event_with_state(state, event, client):
       save_state(state)
 
-def _fetch_replay_batch(client, oldest, latest=None):
+def _fetch_replay_batch(client, oldest):
   if not oldest:
     return []
   max_messages = max(0, CATCHUP_MAX_MESSAGES)
@@ -266,8 +266,6 @@ def _fetch_replay_batch(client, oldest, latest=None):
       "limit": min(200, max_messages),
       "cursor": cursor
     }
-    if latest is not None:
-      params["latest"] = latest
     response = client.conversations_history(
       **params
     )
@@ -283,7 +281,7 @@ def _fetch_replay_batch(client, oldest, latest=None):
   ordered = sorted(retained, key=lambda m: _ts_to_decimal(m.get("ts")) or Decimal("-1"))
   return ordered
 
-def replay_messages(client, latest=None):
+def replay_messages(client):
   with _locked_state():
     state = load_state()
     oldest = state.get("last_processed_ts")
@@ -292,7 +290,7 @@ def replay_messages(client, latest=None):
     if not oldest:
       return
 
-    for message in _fetch_replay_batch(client, oldest=oldest, latest=latest):
+    for message in _fetch_replay_batch(client, oldest=oldest):
       if _process_message_event_with_state(state, {
         "channel": CHANNEL,
         "text": message.get("text", ""),
@@ -319,13 +317,6 @@ def run_catchup_if_needed(client):
 
 @slack_app.event("message")
 def new_message(event, say, client):
-  run_catchup_if_needed(client)
-  event_ts = event.get("ts")
-  with _locked_state():
-    state = load_state()
-    has_replay_boundary = bool(state.get("last_processed_ts") or CATCHUP_INITIAL_TIMESTAMP)
-  if CATCHUP_ENABLED and has_replay_boundary:
-    replay_messages(client, latest=event_ts)
   process_message_event(event, client)
 
 def handle_override_command(data):
@@ -384,4 +375,5 @@ def leaderboard(ack, respond):
   respond(handle_leaderboard_command())
 
 if __name__ == "__main__":
+  run_catchup_if_needed(slack_app.client)
   SocketModeHandler(slack_app, APP_TOKEN).start()
