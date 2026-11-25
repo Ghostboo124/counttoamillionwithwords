@@ -326,8 +326,7 @@ def new_message(event, say, client):
     has_replay_boundary = bool(state.get("last_processed_ts") or CATCHUP_INITIAL_TIMESTAMP)
   if CATCHUP_ENABLED and has_replay_boundary:
     replay_messages(client, latest=event_ts)
-  else:
-    process_message_event(event, client)
+  process_message_event(event, client)
 
 def handle_override_command(data):
   text = data.get("text", "")

@@ -203,6 +203,32 @@ class CatchupTests(unittest.TestCase):
     self.assertEqual(state["scores"]["U1"], 1)
     self.assertEqual(state["scores"]["U2"], 1)
 
+  def test_live_event_is_processed_when_not_yet_available_in_history(self):
+    self.main.save_state({
+      "current": 0,
+      "last_user": "",
+      "scores": {},
+      "last_processed_ts": "1000.0"
+    })
+
+    self.main._catchup_done = True
+    client = FakeClient()
+    self.main.new_message({
+      "channel": "C123",
+      "text": "one",
+      "user": "U1",
+      "ts": "1001.0"
+    }, None, client)
+
+    state = self.main.load_state()
+    self.assertEqual(state["current"], 1)
+    self.assertEqual(state["last_user"], "U1")
+    self.assertEqual(state["last_processed_ts"], "1001.0")
+    self.assertEqual(
+      [reaction["name"] for reaction in client.reactions],
+      ["white_check_mark"]
+    )
+
   def test_override_command_updates_state(self):
     response = self.main.handle_override_command({
       "user_id": "U_ADMIN",
